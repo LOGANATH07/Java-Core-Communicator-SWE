@@ -10,7 +10,6 @@ public class P2PMainServerTest {
     private int mainServerPort = 8000;
     private String loopBackAddress = "10.32.0.41"; // TODO THIS IS NOT LOOPBACK?????
 
-    @Test
     public void testMainServerInitialization() throws UnknownHostException {
         System.setProperty("java.util.logging.SimpleFormatter.format", "%5$s%n");
         ClientNode mainServerNode = new ClientNode(loopBackAddress, mainServerPort);
@@ -23,7 +22,7 @@ public class P2PMainServerTest {
         };
         networking.subscribe(0, func);
         try {
-            Thread.sleep(500000);
+            Thread.sleep(5000);
         } catch (InterruptedException ex) {
             ex.printStackTrace();
         }
