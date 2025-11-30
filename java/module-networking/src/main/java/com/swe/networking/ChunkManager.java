@@ -1,4 +1,15 @@
+/*
+ * -----------------------------------------------------------------------------
+ *  File: ChunkManager.java
+ *  Owner: Udith
+ *  Roll Number : 142201012
+ *  Module : Metworking
+ *
+ * -----------------------------------------------------------------------------
+ */
 package com.swe.networking;
+
+import com.swe.core.ClientNode;
 
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -7,6 +18,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Vector;
+
+import com.swe.core.ClientNode;
 
 /**
  * Code for Chunk Manager.
@@ -191,5 +204,9 @@ public class ChunkManager {
         for (String key : keysToRemove) {
             chunkListMap.remove(key);
         }
+    }
+
+    public Vector<byte[]> getMessageList() {
+        return null;
     }
 }

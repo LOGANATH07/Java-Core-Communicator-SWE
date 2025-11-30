@@ -1,9 +1,16 @@
 package com.swe.networking;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
 
+import com.swe.core.ClientNode;
+import com.swe.core.RPCinterface.AbstractRPC;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
 
 public class NetworkRPCTest {
 
@@ -40,10 +47,13 @@ public class NetworkRPCTest {
 
     @Test
     public void testNetworkRPCSubscribe() {
+        AbstractRPC mockRPC = new MockRPC();
+        Networking.getNetwork().consumeRPC(mockRPC);
         final NetworkRPC rpc = NetworkRPC.getNetworkRPC();
         final ByteBuffer args = ByteBuffer.allocate(4);
         args.putInt(2);
         rpc.networkRPCSubscribe(args.array());
+        Networking.getNetwork().callSubscriber(2, new byte[0]);
     }
 
     @Test
@@ -69,7 +79,8 @@ public class NetworkRPCTest {
         args.put(payload);
         args.putInt(module);
         args.putInt(priority);
-
+        ClientNode user = new ClientNode("127.0.0.1", 8888);
+        Networking.getNetwork().addUser(user, user);
         rpc.networkRPCBroadcast(args.array());
     }
 
@@ -105,3 +116,4 @@ public class NetworkRPCTest {
         rpc.networkRPCSendData(buf.array());
     }
 }
+

@@ -1,3 +1,13 @@
+/*
+ * -----------------------------------------------------------------------------
+ *  File: Server.java
+ *  Owner: Loganath
+ *  Roll Number : 112201016
+ *  Module : Networking
+ *
+ * -----------------------------------------------------------------------------
+ */
+
 package com.swe.networking.SimpleNetworking;
 
 import java.io.IOException;
@@ -6,7 +16,7 @@ import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import com.swe.networking.ClientNode;
+import com.swe.core.ClientNode;
 import com.swe.networking.ModuleType;
 import com.swe.networking.PacketInfo;
 import com.swe.networking.PacketParser;

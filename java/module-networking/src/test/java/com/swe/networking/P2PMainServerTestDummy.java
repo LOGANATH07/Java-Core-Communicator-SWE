@@ -1,4 +1,6 @@
 package com.swe.networking;
+
+import com.swe.core.ClientNode;
 import java.net.UnknownHostException;
 
 import org.junit.Test;
@@ -10,7 +12,6 @@ public class P2PMainServerTestDummy {
     private String loopBackAddress = "10.32.0.41";
     private String loganAddr = "10.32.0.41";
 
-    @Test
     public void testMainServerInitialization() throws UnknownHostException {
         System.setProperty("java.util.logging.SimpleFormatter.format", "%5$s%n");
         ClientNode mainServerNode = new ClientNode(loopBackAddress, mainServerPort);

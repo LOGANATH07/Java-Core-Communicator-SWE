@@ -1,3 +1,13 @@
+/*
+ * -----------------------------------------------------------------------------
+ *  File: NetworkSerializer.java
+ *  Owner: Shubham Yadav
+ *  Roll Number : 112201032
+ *  Module : Metworking
+ *
+ * -----------------------------------------------------------------------------
+ */
+
 package com.swe.networking;
 
 import java.nio.ByteBuffer;
@@ -5,6 +15,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+
+import com.swe.core.ClientNode;
 
 /**
  * Class for serializing network objects.

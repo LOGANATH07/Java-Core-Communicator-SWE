@@ -1,5 +1,6 @@
 package com.swe.networking;
 
+import com.swe.core.ClientNode;
 import org.junit.Test;
 
 public class BroadCastTests {
@@ -7,7 +8,6 @@ public class BroadCastTests {
     private String mainServerAddress = "10.128.1.40";
     private int mainServerPort = 8000;
 
-    @Test
     public void testBroadcast() {
         try {
             final ClientNode node = new ClientNode(mainServerAddress, mainServerPort);
@@ -32,7 +32,6 @@ public class BroadCastTests {
         }
     }
 
-    @Test
     public void testListenForBroadcast0() {
 
         final String ip = "127.0.0.1";

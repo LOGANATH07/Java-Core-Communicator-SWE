@@ -1,8 +1,20 @@
+/*
+ * -----------------------------------------------------------------------------
+ *  File: Topology.java
+ *  Owner: Vishal
+ *  Roll Number : 112201049
+ *  Module : Networking
+ *
+ * -----------------------------------------------------------------------------
+ */
+
 package com.swe.networking;
 
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.swe.core.ClientNode;
 
 /**
  * The main architecture of the networking module. Implements the cluster
