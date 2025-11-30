@@ -57,6 +57,7 @@ class PriorityQueueTest {
     void testSinglePacket() throws UnknownHostException {
         PacketParser parser = getParser();
         byte[] data = createTestPkt(parser, 5, 0, "hello");
+        System.out.println("Hello");
         pq.addPacket(data);
 
         byte[] result = pq.nextPacket();
@@ -94,13 +95,13 @@ class PriorityQueueTest {
     @Test
     void testReverseConservation() throws UnknownHostException {
         PacketParser parser = getParser();
-        for(int i = 0; i < 100; i++) {
+        for(int i = 0; i < 200; i++) {
             byte[] high1Priority = createTestPkt(parser, 0, i, "high");
             pq.addPacket(high1Priority);
 
         }
         int number = 0;
-        for(int i = 0; i < 200; i++){
+        for(int i = 0; i < 100; i++){
             byte[] p = pq.nextPacket();
             if(p != null) {
                 number++;
@@ -178,8 +179,10 @@ class PriorityQueueTest {
 
         byte[] high1Priority = createTestPkt(parser, 0, 0, "high");
         byte[] mid1Priority = createTestPkt(parser, 3, 0, "medium");
-        byte[] low1Priority = createTestPkt(parser, 7, 0, "lowest");
+        byte[] low1Priority = createTestPkt(parser, 6, 0, "low");
+        byte[] chatPriority = createTestPkt(parser, 7, 0, "chat");
 
+        pq.addPacket(chatPriority);
         pq.addPacket(low1Priority);
         pq.addPacket(mid1Priority);
         pq.addPacket(high1Priority);
@@ -188,7 +191,8 @@ class PriorityQueueTest {
         // P1 > P2 > P3 order
         assertArrayEquals(high1Priority, pq.nextPacket(), "Highest priority packet sent first");
         assertArrayEquals(mid1Priority, pq.nextPacket(), "Mid priority packet sent second");
-        assertArrayEquals(low1Priority, pq.nextPacket(), "Low priority packet sent last");
+        assertArrayEquals(low1Priority, pq.nextPacket(), "Low priority packet sent third");
+        assertArrayEquals(chatPriority, pq.nextPacket(), "chat priority packet sent last");
     }
 
     @Test
@@ -216,142 +220,6 @@ class PriorityQueueTest {
 
         System.out.println("packets " + sentCount + " time " + (t2-t1));
     }
-
-    //-------------------------------------------------------------------------
-    // MLFQ & ROTATION TESTS
-    //-------------------------------------------------------------------------
-
-    @Test
-    void testRotation() throws UnknownHostException, InterruptedException {
-        PacketParser parser = getParser();
-
-        for(int i = 0; i < 4000; i++){
-            pq.addPacket(createTestPkt(parser, 6, i, "LP"));
-        }
-
-        for(int i = 0; i < 400; i++){
-            byte[] pkt = pq.nextPacket();
-        }
-
-        Thread.sleep(1100);
-        pq.nextPacket();
-
-        for(int i = 0; i < 1000; i++){
-            pq.addPacket(createTestPkt(parser, 7, 4000+i, "LP"));
-        }
-
-        for(int i = 0; i < 2900; i++){
-            byte[] pkt = pq.nextPacket();
-            if (pkt != null) {
-                final PacketInfo info = parser.parsePacket(pkt);
-                System.out.println(info.getChunkNum());
-            }
-        }
-
-        Thread.sleep(1100);
-
-        pq.nextPacket();
-    }
-
-    @Test
-    void testAggressiveMLFQSurvival() throws UnknownHostException, InterruptedException {
-        PacketParser parser = getParser();
-        final int LP_BUDGET = 20;
-
-        // --- Phase 1: Initial Load ---
-        // Load 40 LP packets (P0-P39) to ensure 20 packets remain after the first epoch.
-        for (int i = 0; i < 40; i++) {
-            pq.addPacket(createTestPkt(parser, 6, i, "LP" + i));
-        }
-        // Add HP/MP traffic to ensure P3 only gets its 20 tokens
-        for (int i = 0; i < 50; i++) { pq.addPacket(createTestPkt(parser, 1, 100+i, "HP")); }
-        for (int i = 0; i < 30; i++) { pq.addPacket(createTestPkt(parser, 3, 200+i, "MP")); }
-
-
-        // --- Epoch 1: Consumption (P0-P19 Sent) ---
-        // Drain 100 packets (50 HP, 30 MP, 20 LP).
-        // P20 to P39 remain in MLFQ[0].
-        for (int i = 0; i < 100; i++) { pq.nextPacket(); }
-
-        System.out.println("--- Epoch 1 Complete. P20-P39 remain in MLFQ[0]. ---");
-
-
-        // --- Rotation 1: MLFQ[0] -> MLFQ[1] ---
-        Thread.sleep(150); // Wait > 10ms for budget reset
-        Thread.sleep(1000); // Wait > 1000ms for rotation
-        pq.nextPacket(); // Sends P20 and Trigger rotation. P21-P39 move to MLFQ[1].
-
-        // --- Epoch 2: Consumption (P20-P39 Sent from MLFQ[1]) ---
-        // Drain 100 packets. P21-P39 are now sent using P3's budget.
-        for (int i = 0; i < 100; i++) { pq.nextPacket(); }
-
-        System.out.println("--- Epoch 2 Complete. MLFQ[1] is now empty. ---");
-
-        // --- Target Packet Load ---
-        // Load one unique target packet (P_TARGET) into MLFQ[0] to track it.
-        byte[] testPkt = createTestPkt(parser, 1, 16900, "Test_Pkt");
-        pq.addPacket(testPkt);
-        byte[] targetPkt = createTestPkt(parser, 7, 500, "TARGET_SURVIVOR");
-        pq.addPacket(targetPkt);
-
-        // --- Rotation 2: MLFQ[1] (empty) -> MLFQ[2] ---
-        Thread.sleep(150);
-        Thread.sleep(1000);
-        pq.nextPacket(); // Trigger rotation. MLFQ[0] moves to MLFQ[1].
-
-        // --- Epoch 3: TARGET is starved by P1/P2 ---
-        // Fill P1/P2 budgets and consume them instantly. TARGET packet remains in MLFQ[1].
-        for (int i = 0; i < 50; i++) { pq.addPacket(createTestPkt(parser, 1, 300+i, "HP")); }
-        for (int i = 0; i < 30; i++) { pq.addPacket(createTestPkt(parser, 4, 400+i, "MP")); }
-        for (int i = 0; i < 79; i++) { pq.nextPacket(); } // Budget consumed (TARGET not sent)
-
-        // --- Rotation 3: MLFQ[2] (empty) -> MLFQ[0] (Recycled Queue) ---
-        Thread.sleep(150);
-        Thread.sleep(1000);
-        pq.nextPacket(); // Trigger rotation.
-
-        // --- Final Rotation (Triggering the Recycled Queue) ---
-        // The TARGET packet should still be in MLFQ[2]
-
-        // Wait 10ms for budget reset
-        Thread.sleep(15);
-
-        // The next call must send the Target Packet, proving it survived the rotation cycles
-        byte[] survivorPkt = pq.nextPacket();
-
-        // --- Assertions ---
-        assertNotNull(survivorPkt, "The target packet must be sent after surviving rotations.");
-        PacketInfo info = parser.parsePacket(survivorPkt);
-        assertEquals(7, info.getPriority(), () -> "The packet should be from level 2.");
-        assertEquals(500, info.getChunkNum(),
-                () -> "The chunk number must match the target survivor (500).");
-    }
-
-    @Test
-    void testMLFQStarvationPrevention() throws InterruptedException, UnknownHostException {
-        PacketParser parser = getParser();
-        final int MLFQ_BUDGET = 20;
-
-        // Add 100 LP packets (P_0 to P_99)
-        for (int i = 0; i < 100; i++) {
-            pq.addPacket(createTestPkt(parser, 7, i, "P" + i));
-        }
-
-        for (int i = 0; i < 99; i++) {
-            pq.nextPacket();
-        }
-
-        byte[] pkt = pq.nextPacket(); // Triggers final rotation
-
-        // Verify the first packet after the full cycle is P_60, and its budget is used.
-        PacketInfo info = parser.parsePacket(pkt);
-        int priority = info.getPriority();
-        int chunkNum = info.getChunkNum();
-
-        assertEquals(7, priority, "Priority must be 7 (Low)");
-        assertEquals(99, chunkNum, "First packet after full cycle should be P_60");
-    }
-
 
     //-------------------------------------------------------------------------
     // WORK-CONSERVATION (CRITICAL EFFICIENCY TEST)

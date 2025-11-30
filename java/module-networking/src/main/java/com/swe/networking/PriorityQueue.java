@@ -16,6 +16,7 @@ import java.util.Deque;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 // File owned by Vishwaa.
 /**
@@ -32,10 +33,6 @@ public class PriorityQueue {
      */
     private static PriorityQueue priorityQueue = null;
     /**
-     * Number of levels in Multi Level Queue.
-     */
-    private static final int MLFQ_LEVELS = 3; // 0, 1, 2
-    /**
      * Time for each epoch (budget reset).
      */
     private static final int EPOCH_MS = 50;
@@ -48,17 +45,21 @@ public class PriorityQueue {
      */
     private static final int ROTATION_TIME = 1000;
     /**
-     * Queue for video packet (highest priority).
+     * Queue for highest priority packet.
      */
-    private final Deque<byte[]> highestPriorityQueue = new ArrayDeque<>();
+    private final Deque<byte[]> highestPriorityQueue = new ConcurrentLinkedDeque<>();
     /**
-     * Queue for screen share packet (mid-priority).
+     * Queue for mid-priority packet.
      */
-    private final Deque<byte[]> midPriorityQueue = new ArrayDeque<>();
+    private final Deque<byte[]> midPriorityQueue = new ConcurrentLinkedDeque<>();
     /**
-     * Multilevel Feedback Queue (MLFQ) for other packets (low priority).
+     * Queue for low priority packet.
      */
-    private final List<Deque<byte[]>> mlfq = new ArrayList<>();
+    private final Deque<byte[]> lowPriorityQueue = new ConcurrentLinkedDeque<>();
+    /**
+     * Queue for chat packet.
+     */
+    private final Deque<byte[]> chatQueue = new ConcurrentLinkedDeque<>();
     /**
      * Current bandwidth tokens.
      */
@@ -67,10 +68,6 @@ public class PriorityQueue {
      * Last time budgets were reset (epoch marker).
      */
     private long lastEpochReset = System.currentTimeMillis();
-    /**
-     * Last time queues were rotated.
-     */
-    private long lastRotation = System.currentTimeMillis();
     /**
      * Private variable to store the start time of the Priority Queue.
      */
@@ -85,9 +82,6 @@ public class PriorityQueue {
      */
     private PriorityQueue() {
         // System.out.println("Networking][Priority Queue] MLFQ has been created");
-        for (int i = 0; i < MLFQ_LEVELS; i++) {
-            mlfq.add(new ArrayDeque<>());
-        }
         startTime = System.currentTimeMillis();
         numPacketsSent = 0;
         resetBudgets();
@@ -114,7 +108,7 @@ public class PriorityQueue {
      * @return the remaining total budget.
      */
     private int getTotalRemainingBudget() {
-        // Sums up all remaining tokens from the HIGHEST,HIGH,and MLFQ buckets.
+        // Sums up all remaining tokens from the HIGHEST,MID, LOW, CHAT buckets.
         return currentBudget.values().stream()
                 .mapToInt(Integer::intValue).sum();
     }
@@ -125,9 +119,8 @@ public class PriorityQueue {
     public void clear() {
         highestPriorityQueue.clear();
         midPriorityQueue.clear();
-        for (Deque<byte[]> level : mlfq) {
-            level.clear();
-        }
+        lowPriorityQueue.clear();
+        chatQueue.clear();
         resetBudgets();
     }
 
@@ -138,15 +131,9 @@ public class PriorityQueue {
      */
     public boolean isEmpty() {
         // Checking the highest and mid-priority queue
-        if (!highestPriorityQueue.isEmpty() || !midPriorityQueue.isEmpty()) {
+        if (!highestPriorityQueue.isEmpty() || !midPriorityQueue.isEmpty() || !lowPriorityQueue.isEmpty()
+                || !chatQueue.isEmpty()) {
             return false;
-        }
-
-        // Check all levels of the MLFQ
-        for (Deque<byte[]> level : mlfq) {
-            if (!level.isEmpty()) {
-                return false; // If any MLFQ level has packets, it's NOT empty
-            }
         }
 
         // If everything is empty
@@ -166,40 +153,6 @@ public class PriorityQueue {
     }
 
     /**
-     * Rotates MLFQ levels every 1000 ms. Level 0 → Level 1, Level 1 → Level 2,
-     * Level 2 → Level 0(recycled)
-     */
-    public void rotateQueues() {
-        final long now = System.currentTimeMillis();
-        if (now - lastRotation >= ROTATION_TIME) {
-            NetworkLogger.printInfo(MODULENAME, "Rotating MLFQ levels...");
-            final Deque<byte[]> level2 = mlfq.get(2);
-            final Deque<byte[]> level1 = mlfq.get(1);
-            final Deque<byte[]> level0 = mlfq.get(0);
-
-            final Deque<byte[]> recycled = new ArrayDeque<>(level2);
-
-            // Rotate down
-            mlfq.set(2, level1);
-            mlfq.set(1, level0);
-
-            // Wrap old level3 back into level0
-            mlfq.set(0, recycled);
-
-            lastRotation = now;
-        }
-    }
-
-    /**
-     * This function returns whether the MLFQ is empty or not.
-     *
-     * @return True if there are no packets in MLFQ otherwise False
-     */
-    private boolean isMlfqEmpty() {
-        return mlfq.stream().allMatch(Deque::isEmpty);
-    }
-
-    /**
      * This function gives the approx throughput of the Priority Queue. This
      * assumes that there are enough number of packets.
      *
@@ -209,6 +162,7 @@ public class PriorityQueue {
 
         final long currTime = System.currentTimeMillis();
         final long timeTaken = currTime - startTime;
+        if (timeTaken == 0) return 0;
         final int packetLength = 1000;
 
         return (packetLength * numPacketsSent) / timeTaken;
@@ -230,14 +184,17 @@ public class PriorityQueue {
                 highestPriorityQueue.add(data);
                 NetworkLogger.printInfo(MODULENAME, "Packet added to the Highest priority queue");
                 break;
-            case THREE, FOUR, FIVE, SIX:
+            case THREE, FOUR, FIVE:
                 midPriorityQueue.add(data);
                 NetworkLogger.printInfo(MODULENAME, "Packet added to mid priority queue");
                 break;
+            case SIX:
+                lowPriorityQueue.add(data);
+                NetworkLogger.printInfo(MODULENAME, "Packet added to low priority queue");
+                break;
             default:
-                // All low-priority packets start at level 0
-                mlfq.get(0).add(data);
-                NetworkLogger.printInfo(MODULENAME, "Packet added to MLFQ level 0");
+                chatQueue.add(data);
+                NetworkLogger.printInfo(MODULENAME, "Packet added to chat queue");
                 break;
         }
     }
@@ -262,10 +219,17 @@ public class PriorityQueue {
             NetworkLogger.printInfo(MODULENAME, "Highest Priority Packet sent from Mid Priority Budget");
             return highestPriorityQueue.pollFirst();
         } else if (midPriorityQueue.size() < highestPriorityQueue.size()
-                && isMlfqEmpty() && currentBudget.get(PacketPriority.TWO) > 0) {
+                && lowPriorityQueue.isEmpty() && currentBudget.get(PacketPriority.TWO) > 0) {
             currentBudget.put(PacketPriority.TWO,
                     currentBudget.get(PacketPriority.TWO) - 1);
             NetworkLogger.printInfo(MODULENAME, "Highest Priority Packet sent from Low Priority Budget");
+            return highestPriorityQueue.pollFirst();
+        } else if(chatQueue.isEmpty() && currentBudget.get(PacketPriority.THREE) > 0
+                    && highestPriorityQueue.size() > midPriorityQueue.size()
+                    && highestPriorityQueue.size() > lowPriorityQueue.size()){
+            currentBudget.put(PacketPriority.THREE,
+                    currentBudget.get(PacketPriority.THREE) - 1);
+            NetworkLogger.printInfo(MODULENAME, "Highest Priority Packet sent from Chat budget");
             return highestPriorityQueue.pollFirst();
         }
         return null;
@@ -298,54 +262,97 @@ public class PriorityQueue {
                 NetworkLogger.printInfo(MODULENAME, "Mid-priority sent from High Priority budget");
             }
             return midPriorityQueue.pollFirst();
-        } else if (isMlfqEmpty() && currentBudget.get(PacketPriority.TWO) > 0) {
+        } else if (lowPriorityQueue.isEmpty() && currentBudget.get(PacketPriority.TWO) > 0) {
             currentBudget.put(PacketPriority.TWO, currentBudget.get(PacketPriority.TWO) - 1);
             NetworkLogger.printInfo(MODULENAME, "Mid-prioity sent from Low Priority budget");
+            return midPriorityQueue.pollFirst();
+        } else if(chatQueue.isEmpty() && currentBudget.get(PacketPriority.THREE) > 0
+                    && midPriorityQueue.size() > lowPriorityQueue.size()){
+            currentBudget.put(PacketPriority.THREE, currentBudget.get(PacketPriority.THREE) - 1);
+            NetworkLogger.printInfo(MODULENAME, "Mid-Priority Packet Sent from chat budget");
             return midPriorityQueue.pollFirst();
         }
         return null;
     }
 
     /**
-     * Processes and sends a packet from the Low Priority (MLFQ)Queues(P3/TWO).
-     * Work-conserving: uses P3, then P2, then P1 budget.
+     * Processes and sends a packet from the Low Priority (P3/TWO).
+     * Work-conserving: uses P3, then P1, then P2 budget.
      *
      * @return The packet data, or null.
      */
     private byte[] processLowPriority() {
+        if (lowPriorityQueue.isEmpty()) {
+//            NetworkLogger.printInfo(MODULENAME, "low is accessed");
+            return null;
+        }
         final int p3Current = currentBudget.get(PacketPriority.TWO);
         final int p2Current = currentBudget.get(PacketPriority.ONE);
         final int p1Current = currentBudget.get(PacketPriority.ZERO);
         final int totalP3Budget = p3Current + p2Current + p1Current;
 
         if (totalP3Budget > 0) {
-            for (int i = 0; i < mlfq.size(); i++) {
-                final Deque<byte[]> q = mlfq.get(i);
-                if (!q.isEmpty()) {
+            // Check current tokens again
 
-                    // Decrement the budget in order: P3 -> P2 -> P1
-                    if (p3Current > 0) {
-                        currentBudget.put(PacketPriority.TWO, p3Current - 1);
-                        NetworkLogger.printInfo(MODULENAME, "Low Priority Packet sent from Low Priority budget");
-                    } else if (p2Current > 0) {
-                        currentBudget.put(PacketPriority.ONE, p2Current - 1);
-                        NetworkLogger.printInfo(MODULENAME, "Low Priority Packet sent from Mid-Priority budget");
-                    } else if (p1Current > 0) { // Use P1's budget
-                        currentBudget.put(PacketPriority.ZERO,
-                                p1Current - 1);
-                        NetworkLogger.printInfo(MODULENAME, "Low Priority Packet sent from High priority budget");
-                    } else {
-                        // This case should be covered by
-                        // the totalP3Budget > 0 check,
-                        // but if budgets were zeroed between
-                        // the check and here, skip.
-                        continue;
-                    }
-
-                    NetworkLogger.printInfo(MODULENAME, "Low Priority Packet sent from MLFQ level " + i);
-                    return q.pollFirst();
-                }
+            if (p3Current > 0) {
+                // Use P3's own budget
+                currentBudget.put(PacketPriority.TWO, p3Current - 1);
+                NetworkLogger.printInfo(MODULENAME, "Low priority packet sent from Low Priority budget");
+            } else if (p2Current > 0) {
+                // Use P2's unused budget
+                currentBudget.put(PacketPriority.ONE, p2Current - 1);
+                NetworkLogger.printInfo(MODULENAME, "Low priority packet sent from Mid Priority budget");
+            } else if(p1Current > 0){
+                // Use P1's unused budget
+                currentBudget.put(PacketPriority.ZERO, p1Current -1);
+                NetworkLogger.printInfo(MODULENAME, "Low priority packet sent from High Priority budget");
             }
+            return lowPriorityQueue.pollFirst();
+        } else if (chatQueue.isEmpty() && currentBudget.get(PacketPriority.THREE) > 0) {
+            currentBudget.put(PacketPriority.THREE, currentBudget.get(PacketPriority.THREE) - 1);
+            NetworkLogger.printInfo(MODULENAME, "Low prioity sent from Chat budget");
+            return lowPriorityQueue.pollFirst();
+        }
+        return null; // nothing available or budget exhausted
+    }
+
+    /**
+     * Processes and sends a packet from the Chat Priority (P4/THREE).
+     * Work-conserving: uses P4, then P1, then P2, then P3 budget.
+     *
+     * @return The packet data, or null.
+     */
+    private byte[] processChat() {
+        if (chatQueue.isEmpty()) {
+//            NetworkLogger.printInfo(MODULENAME, "chat is accessed");
+            return null;
+        }
+        final int p4Current = currentBudget.get(PacketPriority.THREE);
+        final int p3Current = currentBudget.get(PacketPriority.TWO);
+        final int p2Current = currentBudget.get(PacketPriority.ONE);
+        final int p1Current = currentBudget.get(PacketPriority.ZERO);
+        final int totalP4Budget = p4Current + p3Current + p2Current + p1Current;
+
+        if (totalP4Budget > 0) {
+            // Check current tokens again
+            if(p4Current > 0){
+                // Use P4's own budget
+                currentBudget.put(PacketPriority.THREE, p4Current - 1);
+                NetworkLogger.printInfo(MODULENAME, "Chat packet sent from Chat Budget");
+            } else if (p3Current > 0) {
+                // Use P3's unused budget
+                currentBudget.put(PacketPriority.TWO, p3Current - 1);
+                NetworkLogger.printInfo(MODULENAME, "Chat priority packet sent from Low Priority budget");
+            } else if(p2Current > 0){
+                // Use P2's unused budget
+                currentBudget.put(PacketPriority.ONE, p2Current -1);
+                NetworkLogger.printInfo(MODULENAME, "Chat priority packet sent from Mid-Priority budget");
+            } else if (p1Current > 0) {
+                // Use P1's unused budget
+                currentBudget.put(PacketPriority.ZERO, p1Current - 1);
+                NetworkLogger.printInfo(MODULENAME, "Chat priority packet sent from High Priority budget");
+            }
+            return chatQueue.pollFirst();
         }
         return null; // nothing available or budget exhausted
     }
@@ -360,16 +367,16 @@ public class PriorityQueue {
         // 1. Reset budgets every epoch
         if (getTotalRemainingBudget() <= 0) {
             resetBudgets();
+            NetworkLogger.printInfo(MODULENAME, "Reset initiated due to Budget");
         }
 
         final long now = System.currentTimeMillis();
 
         if (now - lastEpochReset >= EPOCH_MS) {
             resetBudgets();
+            NetworkLogger.printInfo(MODULENAME, "Reset initiated due to Time");
         }
 
-        // 2. Rotate MLFQ queues
-        rotateQueues();
 
         // 3. Process priorities in order: P1 > P2 > P3
         // Highest Priority (P1/ZERO)
@@ -384,9 +391,15 @@ public class PriorityQueue {
             return packet;
         }
 
-        // Low Priority (P3/TWO - MLFQ)
+        // Low Priority (P3/TWO)
         packet = processLowPriority();
         if (packet != null) {
+            return packet;
+        }
+
+        //Chat Packets (P4/THREE)
+        packet = processChat();
+        if(packet != null){
             return packet;
         }
         return null;
@@ -434,15 +447,15 @@ public class PriorityQueue {
         /**
          * High priority packet (30% budget share).
          */
-        ONE(1, 30),
+        ONE(1, 20),
         /**
          * Low priority packets handled by MLFQ (20% budget share).
          */
-        TWO(2, 20),
+        TWO(2, 10),
         /**
          * Future extension: low priority.
          */
-        THREE(3, 0),
+        THREE(3, 20),
         /**
          * Future extension: very low priority.
          */
